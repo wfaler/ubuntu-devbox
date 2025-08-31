@@ -11,6 +11,10 @@ Installs and sets up the following:
 * Latest Golang
 * Neovim with a nice config and theme for the above languages and a few more (Rust, Scala, Typescript)
 
+## Why?
+Agentic AI opens a lot of possibilities, but also risks, such as prompt injection and just bad "oopsies". Probably a good idea to keep it separate from your main system.
+I use this inside a Ubuntu Parallels VM on my Mac, but should work on any Ubuntu 24.04 system.
+
 ## Setup
 
 Run this setup by (update inventory as needed):
