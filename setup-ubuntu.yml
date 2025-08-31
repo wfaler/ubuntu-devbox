@@ -115,6 +115,57 @@
         executable: /usr/bin/fish
         creates: "/home/{{ target_user }}/.config/fish/functions/fisher.fish"
 
+    # Install Nerd Fonts
+    - name: Create fonts directory
+      become_user: "{{ target_user }}"
+      file:
+        path: "/home/{{ target_user }}/.local/share/fonts"
+        state: directory
+        mode: '0755'
+
+    - name: Download Nerd Fonts
+      become_user: "{{ target_user }}"
+      get_url:
+        url: "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/{{ item }}.tar.xz"
+        dest: "/tmp/{{ item }}.tar.xz"
+        timeout: 300
+      loop:
+        - FiraCode
+        - JetBrainsMono
+        - Hack
+        - Mononoki
+
+    - name: Extract Nerd Fonts
+      become_user: "{{ target_user }}"
+      unarchive:
+        src: "/tmp/{{ item }}.tar.xz"
+        dest: "/home/{{ target_user }}/.local/share/fonts"
+        remote_src: yes
+      loop:
+        - FiraCode
+        - JetBrainsMono
+        - Hack
+        - Mononoki
+
+    - name: Update font cache
+      become_user: "{{ target_user }}"
+      command: fc-cache -fv
+
+    # Kitty terminal configuration
+    - name: Create .config directory
+      become_user: "{{ target_user }}"
+      file:
+        path: "/home/{{ target_user }}/.config"
+        state: directory
+        mode: '0755'
+
+    - name: Copy kitty configuration
+      become_user: "{{ target_user }}"
+      copy:
+        src: kitty/
+        dest: "/home/{{ target_user }}/.config/"
+        mode: preserve
+
     # SDKMAN Installation
     - name: Install SDKMAN
       become_user: "{{ target_user }}"
@@ -259,11 +310,40 @@
           end
         create: yes
 
-    # Install Fisher plugin for SDKMAN Fish integration
-    - name: Install SDKMAN Fisher plugin
+    # Fishline prompt configuration
+    - name: Add Fishline configuration to Fish
+      become_user: "{{ target_user }}"
+      blockinfile:
+        path: "/home/{{ target_user }}/.config/fish/config.fish"
+        marker: "# {mark} FISHLINE CONFIGURATION"
+        block: |
+          # Fishline prompt configuration
+          if type -q fishline
+              function fish_prompt
+                  fishline -s $status
+              end
+
+              # Customize your fishline prompt
+              set -g FLINE_PATH_STYLE segments
+              set -g FLINE_PATH_MAX_LENGTH 20
+              set -g FLINE_PROMPT_CHAR_VI_DEFAULT '❯'
+              set -g FLINE_PROMPT_CHAR_VI_INSERT '❮'
+
+              # Enable some built-in themes (uncomment the ones you want)
+              # set FLINE_THEME git jobs vi_mode
+              # set FLINE_THEME pwd git vi_mode
+
+              # Or create a custom theme
+              set FLINE_THEME pwd git jobs vi_mode arrow
+          end
+        create: yes
+
+    # Install Fisher plugins
+    - name: Install Fisher plugins
       become_user: "{{ target_user }}"
       shell: |
         fisher install reitzig/sdkman-for-fish
+        fisher install 0rax/fishline
       args:
         executable: /usr/bin/fish
       ignore_errors: yes
