@@ -1,0 +1,280 @@
+---
+- name: Setup Ubuntu 24.04 Development Environment
+  hosts: all
+  become: yes
+  vars:
+    target_user: "{{ ansible_user }}"
+    architecture: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    neovim_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else '64' }}"
+    
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - build-essential
+          - software-properties-common
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - zip
+          - unzip
+          - stow
+          - openssh-server
+        state: present
+
+    # Docker Installation
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker GPG key
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch={{ architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Add user to docker group
+      user:
+        name: "{{ target_user }}"
+        groups: docker
+        append: yes
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # SSH Configuration
+    - name: Start and enable SSH service
+      systemd:
+        name: ssh
+        state: started
+        enabled: yes
+
+    - name: Allow SSH through firewall
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+
+    - name: Enable firewall
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+    # Fish Shell Installation
+    - name: Add Fish shell repository
+      apt_repository:
+        repo: ppa:fish-shell/release-3
+        state: present
+
+    - name: Install Fish shell
+      apt:
+        name: fish
+        state: present
+
+    - name: Set Fish as default shell for user
+      user:
+        name: "{{ target_user }}"
+        shell: /usr/bin/fish
+
+    # Fisher Installation (Fish package manager)
+    - name: Install Fisher for Fish
+      become_user: "{{ target_user }}"
+      shell: |
+        curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
+      args:
+        executable: /usr/bin/fish
+        creates: "/home/{{ target_user }}/.config/fish/functions/fisher.fish"
+
+    # SDKMAN Installation
+    - name: Install SDKMAN
+      become_user: "{{ target_user }}"
+      shell: |
+        curl -s "https://get.sdkman.io" | bash
+      args:
+        creates: "/home/{{ target_user }}/.sdkman/bin/sdkman-init.sh"
+
+    # Java Installation via SDKMAN
+    - name: Install Java 21.0.8-tem via SDKMAN
+      become_user: "{{ target_user }}"
+      shell: |
+        source "/home/{{ target_user }}/.sdkman/bin/sdkman-init.sh" && sdk install java 21.0.8-tem
+      args:
+        executable: /bin/bash
+        creates: "/home/{{ target_user }}/.sdkman/candidates/java/21.0.8-tem"
+
+    # Gradle Installation via SDKMAN
+    - name: Install latest Gradle via SDKMAN
+      become_user: "{{ target_user }}"
+      shell: |
+        source "/home/{{ target_user }}/.sdkman/bin/sdkman-init.sh" && sdk install gradle
+      args:
+        executable: /bin/bash
+        creates: "/home/{{ target_user }}/.sdkman/candidates/gradle/current"
+
+    # Mise Installation
+    - name: Install Mise
+      become_user: "{{ target_user }}"
+      shell: |
+        curl https://mise.run | sh
+      args:
+        creates: "/home/{{ target_user }}/.local/bin/mise"
+
+    - name: Add Mise to PATH in Fish config
+      become_user: "{{ target_user }}"
+      blockinfile:
+        path: "/home/{{ target_user }}/.config/fish/config.fish"
+        marker: "# {mark} MISE CONFIGURATION"
+        block: |
+          # Mise configuration
+          if test -f ~/.local/bin/mise
+              fish_add_path ~/.local/bin
+              ~/.local/bin/mise activate fish | source
+          end
+        create: yes
+
+    - name: Source Mise in bashrc for compatibility
+      become_user: "{{ target_user }}"
+      lineinfile:
+        path: "/home/{{ target_user }}/.bashrc"
+        line: 'eval "$(~/.local/bin/mise activate bash)"'
+        create: yes
+
+    # Python and Poetry via Mise
+    - name: Install latest Python via Mise
+      become_user: "{{ target_user }}"
+      shell: |
+        ~/.local/bin/mise install python@latest
+        ~/.local/bin/mise global python@latest
+      environment:
+        PATH: "/home/{{ target_user }}/.local/bin:{{ ansible_env.PATH }}"
+
+    - name: Install Poetry via Mise
+      become_user: "{{ target_user }}"
+      shell: |
+        ~/.local/bin/mise install poetry@latest
+        ~/.local/bin/mise global poetry@latest
+      environment:
+        PATH: "/home/{{ target_user }}/.local/bin:{{ ansible_env.PATH }}"
+
+    # Node.js via Mise
+    - name: Install latest Node.js via Mise
+      become_user: "{{ target_user }}"
+      shell: |
+        ~/.local/bin/mise install node@latest
+        ~/.local/bin/mise global node@latest
+      environment:
+        PATH: "/home/{{ target_user }}/.local/bin:{{ ansible_env.PATH }}"
+
+    # Claude Code via npm
+    - name: Install Claude Code
+      become_user: "{{ target_user }}"
+      shell: |
+        source ~/.config/fish/config.fish && npm install -g @anthropic-ai/claude-code
+      args:
+        executable: /usr/bin/fish
+      environment:
+        PATH: "/home/{{ target_user }}/.local/bin:{{ ansible_env.PATH }}"
+
+    # Golang via Mise
+    - name: Install latest Golang via Mise
+      become_user: "{{ target_user }}"
+      shell: |
+        ~/.local/bin/mise install go@latest
+        ~/.local/bin/mise global go@latest
+      environment:
+        PATH: "/home/{{ target_user }}/.local/bin:{{ ansible_env.PATH }}"
+
+    # Neovim Installation
+    - name: Download latest Neovim
+      get_url:
+        url: "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-{{ neovim_arch }}.tar.gz"
+        dest: "/tmp/nvim-linux-{{ neovim_arch }}.tar.gz"
+
+    - name: Extract Neovim
+      unarchive:
+        src: "/tmp/nvim-linux-{{ neovim_arch }}.tar.gz"
+        dest: /opt
+        remote_src: yes
+        creates: "/opt/nvim-linux-{{ neovim_arch }}"
+
+    - name: Create symlink for Neovim
+      file:
+        src: "/opt/nvim-linux-{{ neovim_arch }}/bin/nvim"
+        dest: /usr/local/bin/nvim
+        state: link
+
+    # SDKMAN configuration for Fish
+    - name: Add SDKMAN configuration to Fish
+      become_user: "{{ target_user }}"
+      blockinfile:
+        path: "/home/{{ target_user }}/.config/fish/config.fish"
+        marker: "# {mark} SDKMAN CONFIGURATION"
+        block: |
+          # SDKMAN configuration
+          function sdk
+              bash -c "source ~/.sdkman/bin/sdkman-init.sh && sdk $argv"
+          end
+
+          # Add SDKMAN candidates to PATH
+          if test -d ~/.sdkman/candidates/java/current/bin
+              fish_add_path ~/.sdkman/candidates/java/current/bin
+          end
+          if test -d ~/.sdkman/candidates/gradle/current/bin
+              fish_add_path ~/.sdkman/candidates/gradle/current/bin
+          end
+
+          # Set JAVA_HOME
+          if test -d ~/.sdkman/candidates/java/current
+              set -gx JAVA_HOME ~/.sdkman/candidates/java/current
+          end
+        create: yes
+
+    # Install Fisher plugin for SDKMAN Fish integration
+    - name: Install SDKMAN Fisher plugin
+      become_user: "{{ target_user }}"
+      shell: |
+        fisher install reitzig/sdkman-for-fish
+      args:
+        executable: /usr/bin/fish
+      ignore_errors: yes
+
+    # Final system updates
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+
+  handlers:
+    - name: restart docker
+      systemd:
+        name: docker
+        state: restarted

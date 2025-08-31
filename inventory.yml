@@ -1,0 +1,8 @@
+all:
+  hosts:
+    ubuntu-dev:
+      ansible_host: 10.211.55.7
+      ansible_user: parallels
+  vars:
+    target_user: parallels
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
