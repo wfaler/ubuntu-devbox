@@ -163,7 +163,14 @@
       become_user: "{{ target_user }}"
       copy:
         src: kitty/
-        dest: "/home/{{ target_user }}/.config/"
+        dest: "/home/{{ target_user }}/.config/kitty/"
+        mode: preserve
+
+    - name: Copy neovim configuration
+      become_user: "{{ target_user }}"
+      copy:
+        src: nvim/
+        dest: "/home/{{ target_user }}/.config/nvim/"
         mode: preserve
 
     # SDKMAN Installation
